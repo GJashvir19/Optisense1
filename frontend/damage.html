@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Damage assessment · OptiSense</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="nav"></div>
+<main class="wrap">
+  <div class="head">
+    <h1>Assess the damage from a photo</h1>
+    <p>Upload a photo of a building or road. The model says whether it shows damage and how confident it is.</p>
+  </div>
+
+  <div class="card">
+    <label class="drop" id="drop" for="file">
+      <input type="file" id="file" accept="image/*">
+      <strong id="dt">Choose a photo or drop it here</strong><br>
+      <span class="hint">JPG or PNG</span>
+    </label>
+    <img class="pv" id="pv" alt="Selected photo preview">
+    <div class="row"><button class="b b1" id="go" disabled>Analyse photo</button></div>
+    <div class="err" id="err" role="alert"></div>
+  </div>
+
+  <div class="card res" id="res">
+    <span class="badge" id="lbl" style="font-size:20px;padding:8px 20px"></span>
+    <p style="margin:14px 0 20px;color:var(--muted)" id="txt"></p>
+    <div style="display:flex;justify-content:space-between"><b>Damage</b><span id="pd"></span></div>
+    <div class="bar"><b id="bd" style="background:var(--red);width:0"></b></div>
+    <div style="display:flex;justify-content:space-between"><b>No damage</b><span id="pn"></span></div>
+    <div class="bar"><b id="bn" style="background:var(--green);width:0"></b></div>
+  </div>
+</main>
+<div id="foot"></div>
+<script src="common.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+let file = null;
+
+function pick(f) {
+  if (!f || !f.type.startsWith("image/")) return showErr($("err"), "Choose an image file (JPG or PNG).");
+  showErr($("err"), "");
+  file = f;
+  $("dt").textContent = f.name;
+  $("pv").src = URL.createObjectURL(f); $("pv").style.display = "block";
+  $("go").disabled = false;
+}
+$("file").onchange = e => pick(e.target.files[0]);
+["dragover", "dragenter"].forEach(ev => $("drop").addEventListener(ev, e => { e.preventDefault(); $("drop").classList.add("on"); }));
+["dragleave", "drop"].forEach(ev => $("drop").addEventListener(ev, e => { e.preventDefault(); $("drop").classList.remove("on"); }));
+$("drop").addEventListener("drop", e => pick(e.dataTransfer.files[0]));
+
+$("go").onclick = async () => {
+  if (!file) return;
+  showErr($("err"), "");
+  $("go").disabled = true; $("go").textContent = "Analysing…";
+  try {
+    const fd = new FormData(); fd.append("file", file);
+    const r = await post("/predict-damage", fd, true);
+    const dmg = r.label === "damage";
+    $("res").style.display = "block";
+    $("lbl").textContent = dmg ? "Damage found" : "No damage found";
+    $("lbl").className = "badge " + r.label;
+    $("txt").textContent = dmg ? "The model sees signs of damage in this photo." : "The model sees no clear signs of damage in this photo.";
+    $("pd").textContent = (r.damage * 100).toFixed(1) + "%"; $("bd").style.width = r.damage * 100 + "%";
+    $("pn").textContent = (r.no_damage * 100).toFixed(1) + "%"; $("bn").style.width = r.no_damage * 100 + "%";
+    $("res").scrollIntoView({ behavior: "smooth", block: "nearest" });
+  } catch (e) { showErr($("err"), e.message); }
+  $("go").disabled = false; $("go").textContent = "Analyse photo";
+};
+</script>
+</body>
+</html>

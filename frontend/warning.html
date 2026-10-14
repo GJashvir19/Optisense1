@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Early warning · OptiSense</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="nav"></div>
+<main class="wrap">
+  <div class="head">
+    <h1>Get an early warning</h1>
+    <p>Enter your recent readings, oldest first. OptiSense scores each one, spots the trend and forecasts the next 3 hours. Use at least 3 readings.</p>
+  </div>
+
+  <div class="card">
+    <div class="rd h"><span></span><div>Rainfall</div><div>River discharge</div><div>Water level</div><span></span></div>
+    <div id="rows"></div>
+    <button class="b b2" id="add" type="button">Add a reading</button>
+    <div class="grid" style="margin-top:22px">
+      <div><label for="elevation">Elevation</label><input type="number" step="any" id="elevation" value="20"></div>
+      <div><label for="hist">Past floods <span class="hint">(whole number)</span></label><input type="number" step="1" min="0" id="hist" value="3"></div>
+    </div>
+    <div class="row">
+      <button class="b b1" id="go">Get warning</button>
+      <button class="b b2" id="sample" type="button">Reset to sample readings</button>
+    </div>
+    <div class="err" id="err" role="alert"></div>
+  </div>
+
+  <div class="card res" id="res">
+    <div class="alert" id="al"><h2 id="alert"></h2><p style="margin:0" id="msg"></p></div>
+    <div class="stats">
+      <div><small>Forecast in 3 hours</small><b id="fc"></b></div>
+      <div><small>Forecast level</small><b id="fl"></b></div>
+      <div><small>Trend</small><b id="tr"></b></div>
+    </div>
+    <div id="chart"></div>
+  </div>
+</main>
+<div id="foot"></div>
+<script src="common.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const SAMPLE = [[40,300,2.1],[55,380,2.6],[70,470,3.2],[90,600,4.0],[110,720,4.8],[130,860,5.7]];
+
+function addRow(v) {
+  const d = document.createElement("div");
+  d.className = "rd";
+  d.innerHTML = `<span class="n"></span>
+    <input type="number" step="any" aria-label="Rainfall" value="${v[0]}">
+    <input type="number" step="any" aria-label="River discharge" value="${v[1]}">
+    <input type="number" step="any" aria-label="Water level" value="${v[2]}">
+    <button class="x" type="button" aria-label="Remove reading">✕</button>`;
+  d.querySelector(".x").onclick = () => { d.remove(); number(); };
+  $("rows").appendChild(d); number();
+}
+function number() { [...$("rows").children].forEach((r, i) => r.querySelector(".n").textContent = i + 1); }
+function reset() { $("rows").innerHTML = ""; SAMPLE.forEach(addRow); }
+reset();
+$("add").onclick = () => { const l = $("rows").lastElementChild; addRow(l ? [...l.querySelectorAll("input")].map(i => i.value) : [0,0,0]); };
+$("sample").onclick = reset;
+
+function draw(scores, fc) {
+  const W = 640, H = 250, p = 38, n = scores.length, tot = n + 3;
+  const x = i => p + i * (W - 2 * p) / (tot - 1), y = v => H - p - v * (H - 2 * p) / 100;
+  const pts = scores.map((s, i) => `${x(i)},${y(s)}`).join(" ");
+  let s = `<svg class="ch" viewBox="0 0 ${W} ${H}" role="img" aria-label="Risk score over time with a 3 hour forecast">`;
+  [0, 33, 66, 100].forEach(v => s += `<line class="gl" x1="${p}" x2="${W - p}" y1="${y(v)}" y2="${y(v)}"/><text x="${p - 8}" y="${y(v) + 4}" text-anchor="end">${v}</text>`);
+  s += `<polyline class="ln" points="${pts}"/>`;
+  s += `<line class="fc" x1="${x(n - 1)}" y1="${y(scores[n - 1])}" x2="${x(n + 2)}" y2="${y(fc)}"/>`;
+  scores.forEach((v, i) => s += `<circle cx="${x(i)}" cy="${y(v)}" r="4" fill="var(--teal)"/>`);
+  s += `<circle cx="${x(n + 2)}" cy="${y(fc)}" r="6" fill="var(--amber)"/>`;
+  s += `<text x="${x(n - 1)}" y="${H - 10}" text-anchor="middle">Now</text><text x="${x(n + 2)}" y="${H - 10}" text-anchor="middle">+3 h</text></svg>`;
+  $("chart").innerHTML = s;
+}
+
+$("go").onclick = async () => {
+  showErr($("err"), "");
+  const readings = [];
+  for (const r of $("rows").children) {
+    const v = [...r.querySelectorAll("input")].map(i => i.value.trim());
+    if (v.some(x => x === "" || isNaN(x))) return showErr($("err"), "Fill in every reading with numbers.");
+    readings.push({ rainfall: +v[0], river_discharge: +v[1], water_level: +v[2] });
+  }
+  if (readings.length < 3) return showErr($("err"), "Add at least 3 readings so the trend can be found.");
+  const el = $("elevation").value, hf = $("hist").value;
+  if (el === "" || hf === "") return showErr($("err"), "Fill in elevation and past floods.");
+  $("go").disabled = true; $("go").textContent = "Working…";
+  try {
+    const r = await post("/early-warning", { readings, elevation: +el, historical_floods: Math.round(+hf) });
+    $("res").style.display = "block";
+    $("al").className = "alert " + r.forecast_level;
+    $("alert").textContent = r.alert; $("msg").textContent = r.message;
+    $("fc").textContent = r.forecast; $("fl").textContent = r.forecast_level; $("tr").textContent = r.trend;
+    draw(r.scores, r.forecast);
+    $("res").scrollIntoView({ behavior: "smooth", block: "nearest" });
+  } catch (e) { showErr($("err"), e.message); }
+  $("go").disabled = false; $("go").textContent = "Get warning";
+};
+</script>
+</body>
+</html>

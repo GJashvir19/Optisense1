@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flood risk · OptiSense</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="nav"></div>
+<main class="wrap">
+  <div class="head">
+    <h1>Check your flood risk</h1>
+    <p>Enter the current conditions for your area. The model returns a risk score from 0 to 100.</p>
+  </div>
+
+  <div class="card">
+    <div class="grid">
+      <div><label for="rainfall">Rainfall</label><input type="number" step="any" id="rainfall" placeholder="e.g. 120"></div>
+      <div><label for="river_discharge">River discharge</label><input type="number" step="any" id="river_discharge" placeholder="e.g. 800"></div>
+      <div><label for="water_level">Water level</label><input type="number" step="any" id="water_level" placeholder="e.g. 5.5"></div>
+      <div><label for="elevation">Elevation</label><input type="number" step="any" id="elevation" placeholder="e.g. 20"></div>
+      <div><label for="historical_floods">Past floods <span class="hint">(whole number)</span></label><input type="number" step="1" min="0" id="historical_floods" placeholder="e.g. 3"></div>
+    </div>
+    <div class="row">
+      <button class="b b1" id="go">Predict risk</button>
+      <button class="b b2" id="sample" type="button">Fill sample values</button>
+    </div>
+    <div class="err" id="err" role="alert"></div>
+  </div>
+
+  <div class="card res" id="res">
+    <div style="display:flex;align-items:center;gap:22px;flex-wrap:wrap">
+      <div class="big" id="score">0</div>
+      <div><span class="badge" id="lvl"></span><p style="margin:8px 0 0;color:var(--muted)" id="txt"></p></div>
+    </div>
+    <div class="meter"><i id="mk" style="left:0"></i></div>
+    <div class="scale"><span>0 · Low</span><span>33 · Medium</span><span>66 · High</span><span>100</span></div>
+  </div>
+</main>
+<div id="foot"></div>
+<script src="common.js"></script>
+<script>
+const F = ["rainfall","river_discharge","water_level","elevation","historical_floods"];
+const $ = id => document.getElementById(id);
+const say = { LOW:"Risk is low. Keep an eye on conditions.", MEDIUM:"Risk is moderate. Stay alert and check updates.", HIGH:"Risk is high. Prepare to move to safe ground." };
+
+$("sample").onclick = () => { [120,800,5.5,20,3].forEach((v,i) => $(F[i]).value = v); };
+
+$("go").onclick = async () => {
+  showErr($("err"), "");
+  const body = {};
+  for (const f of F) {
+    const v = $(f).value.trim();
+    if (v === "" || isNaN(v)) return showErr($("err"), "Fill in every field with a number.");
+    body[f] = f === "historical_floods" ? Math.round(+v) : +v;
+  }
+  $("go").disabled = true; $("go").textContent = "Predicting…";
+  try {
+    const r = await post("/predict-risk", body);
+    $("res").style.display = "block";
+    $("score").textContent = r.risk_score;
+    $("lvl").textContent = r.risk_level; $("lvl").className = "badge " + r.risk_level;
+    $("txt").textContent = say[r.risk_level] || "";
+    $("mk").style.left = Math.max(0, Math.min(100, r.risk_score)) + "%";
+    $("res").scrollIntoView({ behavior: "smooth", block: "nearest" });
+  } catch (e) { showErr($("err"), e.message); }
+  $("go").disabled = false; $("go").textContent = "Predict risk";
+};
+</script>
+</body>
+</html>
